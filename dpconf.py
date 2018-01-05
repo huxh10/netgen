@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import subprocess
 import networkx as nx
 from collections import defaultdict
 from sets import Set
@@ -88,8 +89,11 @@ class DPConf(Network):
         return match
 
     def dump_conf(self):
+        conf_dir = self.name + '/'
+        subprocess.call(['rm', '-rf', conf_dir])
+        subprocess.call(['mkdir', conf_dir])
         # topology
-        file_name = 'output/topology.json'
+        file_name = conf_dir + 'topology.json'
         topo = {'topology': []}
         for l in self.topo['links']:
             topo['topology'].append({'src': l.intf1, 'dst': l.intf2})
@@ -100,7 +104,7 @@ class DPConf(Network):
         # router rules
         for i in xrange(0, self.sw_num):
             sw = self.topo['switches'][i]
-            file_name = 'output/router' + str(sw.nid) + '.rules.json'
+            file_name = conf_dir + 'router' + str(sw.nid) + '.rules.json'
             router_conf = {'rule':[], 'ports': sw.intfs, 'id': sw.nid}
             for host1 in self.sw_flow_tables[sw.name]:
                 for host2 in self.sw_flow_tables[sw.name][host1]:
