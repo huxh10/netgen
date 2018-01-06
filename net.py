@@ -15,11 +15,11 @@ format
 
 
 class Link(object):
-    def __init__(self, sw1, sw2):
+    def __init__(self, sw1, sw2, intf1=None, intf2=None):
         self.sw1 = sw1
         self.sw2 = sw2
-        self.intf1 = sw1.new_port()
-        self.intf2 = sw2.new_port()
+        self.intf1 = sw1.new_port(intf1)
+        self.intf2 = sw2.new_port(intf2)
 
 
 class Node(object):
@@ -27,12 +27,15 @@ class Node(object):
         self.nid = int(name.split('-')[1])
         self.name = name
         self.next_port_id = 1
-        self.intfs = []
+        self.intf_ids = []
+        self.intf_name2id = {}
         self.ips = []
 
-    def new_port(self):
+    def new_port(self, name=None):
         intf_id = self.nid * MAX_PORT_NUM + self.next_port_id
-        self.intfs.append(intf_id)
+        self.intf_ids.append(intf_id)
+        if name:
+            self.intf_name2id[name] = intf_id
         self.next_port_id += 1
         return intf_id
 
@@ -48,14 +51,41 @@ class Network(object):
         # topo['hosts'] -> [host_objs], topo['switches'] -> [sw_objs]
         # topo['links'] -> [link_objs]
         self.topo = {'hosts': [], 'switches': [], 'links': []}
+        self.sw2node = defaultdict(lambda: None)
         self.host_num = 0
         self.sw_num = 0
 
         # node1 -> node2 -> link_obj
         self.nodes2link = defaultdict(lambda: defaultdict(lambda: None))
 
-    def load_topo(self):
-        pass
+    def get_sw_by_name(self, name):
+        return self.sw2node[name]
+
+    def add_sw_by_name(self, name):
+        self.sw2node[name] = Node(name)
+        self.graph.add_node(name)
+        self.topo['switches'].append(self.sw2node[name])
+
+    def add_link_by_name(self, sw1, sw2, intf1=None, intf2=None):
+        l = Link(self.get_sw_by_name(sw1), self.get_sw_by_name(sw2), intf1, intf2)
+        self.graph.add_edge(sw1, sw2, weight = 1)
+        self.topo['links'].append(l)
+        self.nodes2link[sw1][sw2] = l
+        self.nodes2link[sw2][sw1] = l
+
+    def load_topo_fmt_w(self, topo_file):
+        with open(topo_file, 'r') as in_file:
+            l = in_file.readline()
+            for l in in_file.readlines():
+                intf1, intf2 = l[:-1].split(' ')
+                sw1, port1 = intf1.split('-')
+                sw2, port2 = intf2.split('-')
+                if not self.get_node_by_name(sw1):
+                    self.add_sw_by_name(sw1)
+                if not self.get_node_by_name(sw2):
+                    self.add_sw_by_name(sw2)
+                if not self.nodes2link[sw1][sw2]:
+                    self.add_link_by_name(sw1, sw2, intf1, intf2)
 
     def gen_ft_topo(self, pod):
         # pod: a cluster of edge and aggregation switches
@@ -64,6 +94,7 @@ class Network(object):
         edge_num = pod * pod / 2
         self.sw_num = core_num + aggr_num + edge_num
         self.host_num = ((pod / 2) ** 2) * pod
+        self.link_num = 3 * pod * pod * pod / 4
         core_list = []
         aggr_list = []
         edge_list = []

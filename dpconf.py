@@ -10,6 +10,17 @@ from random import randint
 from net import Network
 
 
+class FlowEntry(object):
+    def __init__(self, conf_type, s_conf):
+        self.parse_conf(s_conf)
+
+    def parse_conf(self, s_conf):
+        self.src_ip_prefix = None
+        self.src_ip_mask = None
+        self.dst_ip_prefix = None
+        self.dst_ip_mask = None
+
+
 class DPConf(Network):
     def __init__(self, name):
         super(DPConf, self).__init__(name)
@@ -17,6 +28,7 @@ class DPConf(Network):
         self.sw_flow_tables = defaultdict(
                 lambda: defaultdict(lambda: defaultdict(lambda: None)))
         self.host2ip = defaultdict(lambda: [])      # host_name -> [ips]
+        self.sw_fts = defaultdict(lambda: None)
 
     def gen_shortest_path(self):
         self.sw_flow_tables = defaultdict(
@@ -49,6 +61,9 @@ class DPConf(Network):
             #self.topo['host'][idx].ips.append(ip)
             idx += 1
         assert idx == self.host_num * host_ip_num
+
+    def load_router_fwd(self):
+        pass
 
     def _host2match(self, h1, h2):
         # 8 * 16 bits, big endian
@@ -98,8 +113,9 @@ class DPConf(Network):
         file_name = conf_dir + 'topology.json'
         topo = {'topology': []}
         for l in self.topo['links']:
-            topo['topology'].append({'src': l.intf1, 'dst': l.intf2})
-            topo['topology'].append({'src': l.intf2, 'dst': l.intf1})
+            if 'h' not in l.sw1.name and 'h' not in l.sw2.name:
+                topo['topology'].append({'src': l.intf1, 'dst': l.intf2})
+                topo['topology'].append({'src': l.intf2, 'dst': l.intf1})
         with open(file_name, 'w') as out_file:
             json.dump(topo, out_file, indent=2)
 
@@ -108,7 +124,7 @@ class DPConf(Network):
         for i in xrange(0, self.sw_num):
             sw = self.topo['switches'][i]
             file_name = conf_dir + 'router' + str(sw.nid) + '.rules.json'
-            router_conf = {'rule':[], 'ports': sw.intfs, 'id': sw.nid}
+            router_conf = {'rule':[], 'ports': sw.intf_ids, 'id': sw.nid}
             for host1 in self.sw_flow_tables[sw.name]:
                 for host2 in self.sw_flow_tables[sw.name][host1]:
                     (in_link, out_link) = self.sw_flow_tables[sw.name][host1][host2]
@@ -120,7 +136,7 @@ class DPConf(Network):
             with open(file_name, 'w') as out_file:
                 json.dump(router_conf, out_file, indent=2)
 
-        print 'configurations generated: %d switches %d hosts %d rules' % (self.sw_num, self.host_num, rule_num)
+        print 'configurations generated: %d switches %d hosts %d links %d rules' % (self.sw_num, self.host_num, self.link_num, rule_num)
 
 
 if __name__ == '__main__':
