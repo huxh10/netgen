@@ -5,6 +5,8 @@ import networkx as nx
 
 
 MAX_PORT_NUM = 10000000     # support 10M-node scale net
+SW_HEADER = 'router'
+HT_HEADER = 'host'
 
 '''
 format
@@ -24,11 +26,12 @@ class Link(object):
 
 class Node(object):
     def __init__(self, name):
-        self.nid = int(name.split('-')[1])
+        self.nid = int(name[6:]) if SW_HEADER in name else int(name[4:])
+        print name, self.nid
         self.name = name
         self.next_port_id = 1
         self.intf_ids = []
-        self.intf_name2id = {}
+        self.intf_name2id = defaultdict(lambda: None)
         self.ips = []
 
     def new_port(self, name=None):
@@ -51,41 +54,48 @@ class Network(object):
         # topo['hosts'] -> [host_objs], topo['switches'] -> [sw_objs]
         # topo['links'] -> [link_objs]
         self.topo = {'hosts': [], 'switches': [], 'links': []}
-        self.sw2node = defaultdict(lambda: None)
+        self.name2node = defaultdict(lambda: None)
         self.host_num = 0
         self.sw_num = 0
+        self.link_num = 0
 
         # node1 -> node2 -> link_obj
         self.nodes2link = defaultdict(lambda: defaultdict(lambda: None))
 
-    def get_sw_by_name(self, name):
-        return self.sw2node[name]
+    def get_node_by_name(self, name):
+        return self.name2node[name]
 
-    def add_sw_by_name(self, name):
-        self.sw2node[name] = Node(name)
+    def add_node_by_name(self, name):
         self.graph.add_node(name)
-        self.topo['switches'].append(self.sw2node[name])
+        self.name2node[name] = Node(name)
+        if SW_HEADER in name:
+            self.topo['switches'].append(self.name2node[name])
+            self.sw_num += 1
+        elif HT_HEADER in name:
+            self.topo['hosts'].append(self.name2node[name])
+            self.host_num += 1
 
     def add_link_by_name(self, sw1, sw2, intf1=None, intf2=None):
-        l = Link(self.get_sw_by_name(sw1), self.get_sw_by_name(sw2), intf1, intf2)
+        l = Link(self.get_node_by_name(sw1), self.get_node_by_name(sw2), intf1, intf2)
         self.graph.add_edge(sw1, sw2, weight = 1)
         self.topo['links'].append(l)
         self.nodes2link[sw1][sw2] = l
         self.nodes2link[sw2][sw1] = l
 
     def load_topo_fmt_w(self, topo_file):
-        with open(topo_file, 'r') as in_file:
+        with open(topo_file, 'r+') as in_file:
             l = in_file.readline()
             for l in in_file.readlines():
                 intf1, intf2 = l[:-1].split(' ')
                 sw1, port1 = intf1.split('-')
                 sw2, port2 = intf2.split('-')
                 if not self.get_node_by_name(sw1):
-                    self.add_sw_by_name(sw1)
+                    self.add_node_by_name(sw1)
                 if not self.get_node_by_name(sw2):
-                    self.add_sw_by_name(sw2)
+                    self.add_node_by_name(sw2)
                 if not self.nodes2link[sw1][sw2]:
-                    self.add_link_by_name(sw1, sw2, intf1, intf2)
+                    self.add_link_by_name(sw1, sw2, port1, port2)
+                self.link_num += 1
 
     def gen_ft_topo(self, pod):
         # pod: a cluster of edge and aggregation switches
@@ -105,7 +115,7 @@ class Network(object):
 
         # create switches
         for i in xrange(0, self.sw_num):
-            sw_name = 's-' + str(i+1)
+            sw_name = SW_HEADER + str(i+1)
             sw = Node(sw_name)
             self.topo['switches'].append(sw)
             self.graph.add_node(sw_name)
@@ -118,7 +128,7 @@ class Network(object):
 
         # create hosts
         for i in xrange(0, self.host_num):
-            host_name = 'h-' + str(i+1)
+            host_name = HT_HEADER + str(i+1)
             host = Node(host_name)
             self.topo['hosts'].append(host)
             self.graph.add_node(host_name)
