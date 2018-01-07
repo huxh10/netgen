@@ -27,7 +27,7 @@ class Link(object):
 class Node(object):
     def __init__(self, name):
         self.nid = int(name[6:]) if SW_HEADER in name else int(name[4:])
-        print name, self.nid
+        #print name, self.nid
         self.name = name
         self.next_port_id = 1
         self.intf_ids = []
